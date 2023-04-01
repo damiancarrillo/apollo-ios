@@ -11,12 +11,14 @@ struct FragmentTemplate: TemplateRenderer {
   let target: TemplateTarget = .operationFile
 
   var template: TemplateString {
-    TemplateString(
+    let accessControl = embeddedAccessControlModifier(target: target)
+
+    return TemplateString(
     """
-    \(embeddedAccessControlModifier(target: target))\
+    \(accessControl)\
     struct \(fragment.name.firstUppercased): \(config.schemaNamespace.firstUppercased)\
     .\(if: isMutable, "Mutable")SelectionSet, Fragment {
-      static var fragmentDefinition: StaticString { ""\"
+      \(accessControl)static var fragmentDefinition: StaticString { ""\"
         \(fragment.definition.source)
         ""\" }
 
