@@ -26,20 +26,32 @@ class SelectionSetTemplate_RenderOperation_Tests: XCTestCase {
 
   // MARK: - Helpers
 
-  func buildSubjectAndOperation(named operationName: String = "TestOperation") throws {
+  func buildSubjectAndOperation(
+    named operationName: String = "TestOperation",
+    moduleType: ApolloCodegenConfiguration.SchemaTypesFileOutput.ModuleType = .swiftPackageManager,
+    operations: ApolloCodegenConfiguration.OperationsFileOutput = .inSchemaModule
+  ) throws {
     ir = try .mock(schema: schemaSDL, document: document)
     let operationDefinition = try XCTUnwrap(ir.compilationResult[operation: operationName])
     operation = ir.build(operation: operationDefinition)
+    let config = ApolloCodegen.ConfigurationContext(config: .mock(
+      output: .mock(moduleType: moduleType, operations: operations)
+    ))
+    let mockTemplateRenderer = MockTemplateRenderer(
+      target: .operationFile,
+      template: "",
+      config: config
+    )
     subject = SelectionSetTemplate(
       generateInitializers: false,
-      config: ApolloCodegen.ConfigurationContext(config: .mock())
+      config: config,
+      accessControlRenderer: mockTemplateRenderer.embeddedAccessControlModifier(
+        target: mockTemplateRenderer.target
+      )
     )
   }
 
-  // MARK: - Tests
-
-  func test__render__givenOperationWithName_rendersDeclaration() throws {
-    // given
+  func buildSchemaAndDocument() {
     schemaSDL = """
     type Query {
       allAnimals: [Animal!]
@@ -57,6 +69,13 @@ class SelectionSetTemplate_RenderOperation_Tests: XCTestCase {
       }
     }
     """
+  }
+
+  // MARK: - Tests
+
+  func test__render__givenOperationWithName_rendersDeclaration() throws {
+    // given
+    buildSchemaAndDocument()
 
     let expected = """
     public struct Data: TestSchema.SelectionSet {
@@ -73,6 +92,166 @@ class SelectionSetTemplate_RenderOperation_Tests: XCTestCase {
     // then
     expect(actual).to(equalLineByLine(expected, ignoringExtraLines: true))
     expect(String(actual.reversed())).to(equalLineByLine("}", ignoringExtraLines: true))
+  }
+
+  // MARK: Access Level Tests
+
+  func test__render__givenOperation_whenModuleType_swiftPackageManager_andOperations_inSchemaModule_shouldRenderWithPublicAccess() throws {
+    // given
+    buildSchemaAndDocument()
+
+    let expected = """
+    public struct Data: TestSchema.SelectionSet {
+      public let __data: DataDict
+      public init(_dataDict: DataDict) { __data = _dataDict }
+
+      public static var __parentType: ApolloAPI.ParentType { TestSchema.Objects.Query }
+    """
+
+    // when
+    try buildSubjectAndOperation(moduleType: .swiftPackageManager, operations: .inSchemaModule)
+    let actual = subject.render(for: operation)
+
+    // then
+    expect(actual).to(equalLineByLine(expected, ignoringExtraLines: true))
+  }
+
+  func test__render__givenOperation_whenModuleType_embeddedInTargetWithPublicAccessModifier_andOperations_inSchemaModule_shouldRenderWithPublicAccess() throws {
+    // given
+    buildSchemaAndDocument()
+
+    let expected = """
+    public struct Data: TestSchema.SelectionSet {
+      public let __data: DataDict
+      public init(_dataDict: DataDict) { __data = _dataDict }
+
+      public static var __parentType: ApolloAPI.ParentType { TestSchema.Objects.Query }
+    """
+
+    // when
+    try buildSubjectAndOperation(
+      moduleType: .embeddedInTarget(name: "TestTarget", accessModifier: .public),
+      operations: .inSchemaModule
+    )
+    let actual = subject.render(for: operation)
+
+    // then
+    expect(actual).to(equalLineByLine(expected, ignoringExtraLines: true))
+  }
+
+  func test__render__givenOperation_whenModuleType_embeddedInTargetWithInternalAccessModifier_andOperations_inSchemaModule_shouldRenderWithInternalAccess() throws {
+    // given
+    buildSchemaAndDocument()
+
+    let expected = """
+    struct Data: TestSchema.SelectionSet {
+      let __data: DataDict
+      init(_dataDict: DataDict) { __data = _dataDict }
+
+      static var __parentType: ApolloAPI.ParentType { TestSchema.Objects.Query }
+    """
+
+    // when
+    try buildSubjectAndOperation(
+      moduleType: .embeddedInTarget(name: "TestTarget", accessModifier: .internal),
+      operations: .inSchemaModule
+    )
+    let actual = subject.render(for: operation)
+
+    // then
+    expect(actual).to(equalLineByLine(expected, ignoringExtraLines: true))
+  }
+
+  func test__render__givenOperation_whenModuleType_swiftPackageManager_andOperations_relativeWithPublicAccessModifier_shouldRenderWithPublicAccess() throws {
+    // given
+    buildSchemaAndDocument()
+
+    let expected = """
+    public struct Data: TestSchema.SelectionSet {
+      public let __data: DataDict
+      public init(_dataDict: DataDict) { __data = _dataDict }
+
+      public static var __parentType: ApolloAPI.ParentType { TestSchema.Objects.Query }
+    """
+
+    // when
+    try buildSubjectAndOperation(
+      moduleType: .swiftPackageManager,
+      operations: .relative(subpath: nil, accessModifier: .public)
+    )
+    let actual = subject.render(for: operation)
+
+    // then
+    expect(actual).to(equalLineByLine(expected, ignoringExtraLines: true))
+  }
+
+  func test__render__givenOperation_whenModuleType_swiftPackageManager_andOperations_relativeWithInternalAccessModifier_shouldRenderWithInternalAccess() throws {
+    // given
+    buildSchemaAndDocument()
+
+    let expected = """
+    struct Data: TestSchema.SelectionSet {
+      let __data: DataDict
+      init(_dataDict: DataDict) { __data = _dataDict }
+
+      static var __parentType: ApolloAPI.ParentType { TestSchema.Objects.Query }
+    """
+
+    // when
+    try buildSubjectAndOperation(
+      moduleType: .swiftPackageManager,
+      operations: .relative(subpath: nil, accessModifier: .internal)
+    )
+    let actual = subject.render(for: operation)
+
+    // then
+    expect(actual).to(equalLineByLine(expected, ignoringExtraLines: true))
+  }
+
+  func test__render__givenOperation_whenModuleType_swiftPackageManager_andOperations_absoluteWithPublicAccessModifier_shouldRenderWithPublicAccess() throws {
+    // given
+    buildSchemaAndDocument()
+
+    let expected = """
+    public struct Data: TestSchema.SelectionSet {
+      public let __data: DataDict
+      public init(_dataDict: DataDict) { __data = _dataDict }
+
+      public static var __parentType: ApolloAPI.ParentType { TestSchema.Objects.Query }
+    """
+
+    // when
+    try buildSubjectAndOperation(
+      moduleType: .swiftPackageManager,
+      operations: .absolute(path: "", accessModifier: .public)
+    )
+    let actual = subject.render(for: operation)
+
+    // then
+    expect(actual).to(equalLineByLine(expected, ignoringExtraLines: true))
+  }
+
+  func test__render__givenOperation_whenModuleType_swiftPackageManager_andOperations_absoluteWithInternalAccessModifier_shouldRenderWithInternalAccess() throws {
+    // given
+    buildSchemaAndDocument()
+
+    let expected = """
+    struct Data: TestSchema.SelectionSet {
+      let __data: DataDict
+      init(_dataDict: DataDict) { __data = _dataDict }
+
+      static var __parentType: ApolloAPI.ParentType { TestSchema.Objects.Query }
+    """
+
+    // when
+    try buildSubjectAndOperation(
+      moduleType: .swiftPackageManager,
+      operations: .absolute(path: "", accessModifier: .internal)
+    )
+    let actual = subject.render(for: operation)
+
+    // then
+    expect(actual).to(equalLineByLine(expected, ignoringExtraLines: true))
   }
 
 }

@@ -6,17 +6,20 @@ struct SelectionSetTemplate {
   let isMutable: Bool
   let generateInitializers: Bool
   let config: ApolloCodegen.ConfigurationContext
+  let accessControlRenderer: () -> String
 
   private let nameCache: SelectionSetNameCache
 
   init(
     mutable: Bool = false,
     generateInitializers: Bool,
-    config: ApolloCodegen.ConfigurationContext
+    config: ApolloCodegen.ConfigurationContext,
+    accessControlRenderer: @autoclosure @escaping () -> String
   ) {
     self.isMutable = mutable
     self.generateInitializers = generateInitializers
     self.config = config
+    self.accessControlRenderer = accessControlRenderer
 
     self.nameCache = SelectionSetNameCache(config: config)
   }
@@ -25,7 +28,7 @@ struct SelectionSetTemplate {
   func render(for operation: IR.Operation) -> String {
     TemplateString(
     """
-    public struct Data: \(SelectionSetType()) {
+    \(accessControlRenderer())struct Data: \(SelectionSetType()) {
       \(BodyTemplate(operation.rootField.selectionSet))
     }
     """
@@ -37,7 +40,8 @@ struct SelectionSetTemplate {
     TemplateString(
     """
     \(SelectionSetNameDocumentation(field.selectionSet))
-    public struct \(field.formattedSelectionSetName(with: config.pluralizer)): \(SelectionSetType()) {
+    \(accessControlRenderer())\
+    struct \(field.formattedSelectionSetName(with: config.pluralizer)): \(SelectionSetType()) {
       \(BodyTemplate(field.selectionSet))
     }
     """
@@ -49,7 +53,8 @@ struct SelectionSetTemplate {
     TemplateString(
     """
     \(SelectionSetNameDocumentation(inlineFragment))
-    public struct \(inlineFragment.renderedTypeName): \(SelectionSetType(asInlineFragment: true))\
+    \(accessControlRenderer())\
+    struct \(inlineFragment.renderedTypeName): \(SelectionSetType(asInlineFragment: true))\
     \(if: inlineFragment.isCompositeSelectionSet, ", \(config.ApolloAPITargetName).CompositeInlineFragment") \
     {
       \(BodyTemplate(inlineFragment))
@@ -117,9 +122,11 @@ struct SelectionSetTemplate {
   }
 
   private func DataFieldAndInitializerTemplate() -> String {
-    """
-    public \(isMutable ? "var" : "let") __data: DataDict
-    public init(_dataDict: DataDict) { __data = _dataDict }
+    let accessControl = accessControlRenderer()
+
+    return """
+    \(accessControl)\(isMutable ? "var" : "let") __data: DataDict
+    \(accessControl)init(_dataDict: DataDict) { __data = _dataDict }
     """
   }
 
@@ -133,14 +140,15 @@ struct SelectionSetTemplate {
       pluralizer: config.pluralizer
     )
     return """
-    public typealias RootEntityType = \(rootEntityName)
+    \(accessControlRenderer())typealias RootEntityType = \(rootEntityName)
     """
   }
 
   private func ParentTypeTemplate(_ type: GraphQLCompositeType) -> String {
     """
-    public static var __parentType: \(config.ApolloAPITargetName).ParentType { \
-    \(GeneratedSchemaTypeReference(type)) }
+    \(accessControlRenderer())\
+    static var __parentType: \(config.ApolloAPITargetName).ParentType { \
+    \(GeneratedTypeReference(type)) }
     """
   }
 
@@ -176,7 +184,8 @@ struct SelectionSetTemplate {
     config.options.warningsOnDeprecatedUsage == .include ? [] : nil
 
     let selectionsTemplate = TemplateString("""
-    public static var __selections: [\(config.ApolloAPITargetName).Selection] { [
+    \(accessControlRenderer())\
+    static var __selections: [\(config.ApolloAPITargetName).Selection] { [
       \(if: shouldIncludeTypenameSelection(for: scope), ".field(\"__typename\", String.self),")
       \(renderedSelections(groupedSelections.unconditionalSelections, &deprecatedArguments), terminator: ",")
       \(groupedSelections.inclusionConditionGroups.map {
@@ -309,7 +318,8 @@ struct SelectionSetTemplate {
     return """
     \(documentation: field.underlyingField.documentation, config: config)
     \(deprecationReason: field.underlyingField.deprecationReason, config: config)
-    public var \(field.responseKey.firstLowercased.asFieldAccessorPropertyName): \
+    \(accessControlRenderer())\
+    var \(field.responseKey.firstLowercased.asFieldAccessorPropertyName): \
     \(typeName(for: field, forceOptional: field.isConditionallyIncluded(in: scope))) {\
     \(if: isMutable,
       """
@@ -338,7 +348,7 @@ struct SelectionSetTemplate {
   private func InlineFragmentAccessorTemplate(_ inlineFragment: IR.SelectionSet) -> TemplateString {
     let typeName = inlineFragment.renderedTypeName
     return """
-    public var \(typeName.firstLowercased): \(typeName)? {\
+    \(accessControlRenderer())var \(typeName.firstLowercased): \(typeName)? {\
     \(if: isMutable,
       """
 
@@ -361,7 +371,7 @@ struct SelectionSetTemplate {
     }
 
     return """
-    public struct Fragments: FragmentContainer {
+    \(accessControlRenderer())struct Fragments: FragmentContainer {
       \(DataFieldAndInitializerTemplate())
 
       \(ifLet: selections.direct?.fragments.values, {
@@ -385,7 +395,7 @@ struct SelectionSetTemplate {
     !scope.matches(fragment.inclusionConditions.unsafelyUnwrapped)
 
     return """
-    public var \(propertyName): \(typeName)\
+    \(accessControlRenderer())var \(propertyName): \(typeName)\
     \(if: isOptional, "?") {\
     \(if: isMutable,
       """
@@ -409,7 +419,7 @@ struct SelectionSetTemplate {
 
   private func InitializerTemplate(_ selectionSet: IR.SelectionSet) -> TemplateString {
     return """
-    public init(
+    \(accessControlRenderer())init(
       \(InitializerSelectionParametersTemplate(selectionSet))
     ) {
       self.init(_dataDict: DataDict(data: [

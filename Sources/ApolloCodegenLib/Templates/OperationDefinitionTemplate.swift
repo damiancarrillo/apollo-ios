@@ -18,7 +18,8 @@ struct OperationDefinitionTemplate: OperationTemplateRenderer {
         operation.definition,
         identifier: operation.operationIdentifier,
         fragments: operation.referencedFragments,
-        config: config
+        config: config,
+        accessControlRenderer: { embeddedAccessControlModifier(target: target) }()
       ))
 
       \(section: VariableProperties(operation.definition.variables))
@@ -29,7 +30,8 @@ struct OperationDefinitionTemplate: OperationTemplateRenderer {
 
       \(SelectionSetTemplate(
           generateInitializers: config.options.shouldGenerateSelectionSetInitializers(for: operation),
-          config: config
+          config: config,
+          accessControlRenderer: { embeddedAccessControlModifier(target: target) }()
       ).render(for: operation))
     }
 
@@ -37,10 +39,12 @@ struct OperationDefinitionTemplate: OperationTemplateRenderer {
   }
 
   private func OperationDeclaration(_ operation: CompilationResult.OperationDefinition) -> TemplateString {
+    let accessControl = embeddedAccessControlModifier(target: target)
+
     return """
-    \(embeddedAccessControlModifier(target: target))\
+    \(accessControl)\
     class \(operation.nameWithSuffix.firstUppercased): \(operation.operationType.renderedProtocolName) {
-      public static let operationName: String = "\(operation.name)"
+      \(accessControl)static let operationName: String = "\(operation.name)"
     """
   }
 
@@ -49,13 +53,15 @@ struct OperationDefinitionTemplate: OperationTemplateRenderer {
       _ operation: CompilationResult.OperationDefinition,
       identifier: @autoclosure () -> String,
       fragments: OrderedSet<IR.NamedFragment>,
-      config: ApolloCodegen.ConfigurationContext
+      config: ApolloCodegen.ConfigurationContext,
+      accessControlRenderer: @autoclosure () -> String
     ) -> TemplateString {
       let includeFragments = !fragments.isEmpty
       let includeDefinition = config.options.apqs != .persistedOperationsOnly
 
       return TemplateString("""
-      public static let document: \(config.ApolloAPITargetName).DocumentType = .\(config.options.apqs.rendered)(
+      \(accessControlRenderer())\
+      static let document: \(config.ApolloAPITargetName).DocumentType = .\(config.options.apqs.rendered)(
       \(if: config.options.apqs != .disabled, """
         operationIdentifier: \"\(identifier())\"\(if: includeDefinition, ",")
       """)
